@@ -17,6 +17,9 @@ class RequestHandler:
             print(resp.text)
         resp.raise_for_status()
 
+    def list(self, uri, params = None, data_format = "json", use_api_uri = True):
+        return self.get(uri,params = params, data_format = "json").get("imdata", [])
+
 
     def get(self, uri, params = None, data_format = "json", use_api_uri = True):
         if use_api_uri:
