@@ -342,7 +342,7 @@ class MOInterface:
         for k, v in self.__dict__.items():
             yield (k,v)
 
-    def get(self,class_name, dn):
+    def get(self,class_name, dn, **kwargs):
         return MOHandler(class_name, request_handler = self.request_handler).get(dn, **kwargs)
 
     def list(self,class_name,dn, **kwargs):
