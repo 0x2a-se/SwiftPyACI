@@ -24,7 +24,6 @@ class APIC:
         return True
 
     @property
-    #def mo(self, class_name, dn):
     def mo(self):
         return MOInterface(request_handler = self.req)
 

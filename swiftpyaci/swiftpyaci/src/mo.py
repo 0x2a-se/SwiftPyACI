@@ -3,13 +3,20 @@ import json
 import re
 
 from copy import deepcopy
+from .base_class import Base
+from .base_class import Generic
+
 
 class MO:
-    def __init__(self, class_name, dn, mo_class = None, request_handler = None, class_meta = None, load = False, **kwargs):
+    def __init__(self, class_name, dn = None,rn = None,parent_dn = None,  mo_class = None, request_handler = None, class_meta = None, load = False, **kwargs):
+        
+
         self.__log = logging.getLogger()
         self.__class_name = class_name
         self.__mo_class = mo_class
-        self.dn = dn
+        self.__dn = dn
+        self.__rn = rn
+        self.__parent_dn = parent_dn
         self.__req = request_handler
         self.__cache_attributes = None
         self.__exists = None
@@ -17,6 +24,37 @@ class MO:
         self.set_attrs(**kwargs)
         if load:
             self.load()
+
+    @property
+    def dn(self):
+        if self.__dn:
+            return self.__dn
+        if self.rn and self.__parent_dn:
+            return f"{self.__parent_dn}/{self.rn}"
+        
+        raise ValueError(f"Could not construct DN for '{self.__class_name}'")
+
+    @property
+    def rn(self):
+        if self.__rn:
+            return self.__rn
+        
+        rn = self.__mo_class.rn_format
+        for attr in self.__mo_class.naming:
+            rn = rn.replace(f"{{{attr}}}", getattr(self,attr))
+        if rn:
+            return rn
+        raise ValueError(f"Could not construct rn for '{self.__class_name}'")
+
+    def __setattr__(self, name, value):
+        if name == "dn":
+            name = "__dn"
+
+        elif not name.startswith("_") and name and not self.__mo_class.is_valid_attribute(name):
+            raise ValueError(f"{name} is not a valid attribute")
+        
+        super().__setattr__(name, value)
+
 
     def __str__(self):
         return self.dn
@@ -31,10 +69,15 @@ class MO:
             if not k.startswith("_"):
                 yield (k,v)
 
+
     @property
     def class_name(self):
         return self.__class_name
     
+    @property
+    def meta(self):
+        return self.__mo_class
+
     @property
     def uri(self):
         return f"mo/{self.dn}"
@@ -145,28 +188,97 @@ class MO:
     def json(self):
         return json.dumps(self.serilize())
 
-class MOClass:
-    def __init__(self,class_name, request_handler):
-        self.class_name = class_name
-        self.meta_full_class_name = re.sub( r"([A-Z])", r":\1", class_name, count=1)
-        self.meta_class_category, self.meta_class_name = self.meta_full_class_name.split(":")
-        self.request_handler = request_handler
-        resp = self.request_handler.get(f"doc/jsonmeta/{self.meta_class_category}/{self.meta_class_name}", use_api_uri = False)
-        self.json_meta = resp.get(self.meta_full_class_name,{})
-        self.identified_by = self.json_meta.get("identifiedBy")
-        self.configurable_attributes = {k: v for k,v in self.json_meta.get("properties").items() if v.get("isConfigurable", False)}
-        self.rn_format = self.json_meta.get("rnFormat")
-    
+class MOAttribute(Base):
+    def __init__(self, attr_name,**kwargs):
+        self.__attr_name = attr_name
+        self.set_attrs(**kwargs)
+
     def __str__(self):
-        return self.meta_full_class_name
+        return self.__attr_name
 
-    def __repr__(self):
-        res = [f"{k}='{v}'" for k,v in self]
-        return f"{self.__class__.__name__}({','.join(res)})"
+    @property
+    def attr_name(self):
+        return self.__attr_name
 
-    def __iter__(self):
-        for k, v in self.__dict__.items():
-            yield (k,v)
+    def is_naming(self):
+        if getattr(self, "isNaming", False):
+            return True
+        return False
+    
+    def is_mandatory(self):
+        if getattr(self, "mandatory", False) or getattr(self, "isNaming", False):
+            return True
+        return False
+
+
+class MOAttributes(Base):
+    def __init__(self,**kwargs):
+        for k,v in kwargs.items():
+            setattr(self,k,MOAttribute(k, **v))
+
+    def get_mandatory(self):
+        for k,v in self:
+            if v.is_mandatory():
+                yield k
+
+    def get_naming(self):
+        for k,v in self:
+            if v.is_mandatory():
+                yield k
+
+    def get_configurable(self):
+        for k,v in self:
+            if v.isConfigurable:
+                yield k
+    
+
+
+class MOClass(Base):
+    def __init__(self,class_name, request_handler):
+        self.__class_name = class_name
+        self.__meta_full_class_name = re.sub( r"([A-Z])", r":\1", class_name, count=1)
+        self.__meta_class_category, self.__meta_class_name = self.__meta_full_class_name.split(":")
+        self.request_handler = request_handler
+        self.set_json_meta()
+        self.set_identified_by()
+        self.set_attributes()
+        self.set_mandatory()
+        self.set_naming()
+        self.set_configurable_attributes()
+        self.rn_format = self.__raw_json_meta.get("rnFormat")
+
+    @property
+    def class_name(self):
+        return self.__class_name
+    
+    def set_attributes(self):
+        self.attributes = MOAttributes(**self.__raw_json_meta.get("properties"))
+
+    def set_configurable_attributes(self):
+        self.configurable_attributes = list(self.attributes.get_configurable())
+    
+    def set_json_meta(self):
+        resp = self.request_handler.get(f"doc/jsonmeta/{self.__meta_class_category}/{self.__meta_class_name}", use_api_uri = False)
+        self.__raw_json_meta = resp.get(self.__meta_full_class_name,{})
+        self.set_attrs(**self.__raw_json_meta)
+
+    def set_identified_by(self):
+        self.identified_by = self.__raw_json_meta.get("identifiedBy")
+
+    def set_mandatory(self):
+        self.mandatory = list(self.attributes.get_mandatory())
+    
+    def set_naming(self):
+        self.naming = list(self.attributes.get_naming())
+
+    def __str__(self):
+        return self.__meta_full_class_name
+    
+    def is_valid_attribute(self, arg):
+        if arg in self.configurable_attributes:
+            return True
+        return False
+
 
 
 class MOHandler:
@@ -185,9 +297,10 @@ class MOHandler:
     def __iter__(self):
         for k, v in self.__dict__.items():
             yield (k,v)
-    
-    def get(self, dn, load = True, **kwargs):
-        mo = MO(self.class_name, dn, request_handler = self.request_handler, **kwargs)
+        
+
+    def get(self, dn = None, load = False, **kwargs):
+        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, **kwargs)
         if load:
             return mo
         mo.load()
@@ -200,17 +313,17 @@ class MOHandler:
         resp = self.request_handler.list(f"class/{self.class_name}", params=params)
         for mo in resp:
             this = list(mo.values())[0].get("attributes",{})
-            yield MO(self.class_name, this.pop("dn"), request_handler = self.request_handler, load = False, **this)
+            yield MO(self.class_name, this.pop("dn"), request_handler = self.request_handler, mo_class = self.mo_class, load = False, **this)
     
-    def create(self, dn, **kwargs):
-        mo = MO(self.class_name, dn, request_handler = self.request_handler, **kwargs)
+    def create(self, dn = None, load = False, **kwargs):
+        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, **kwargs)
         mo.load()
         if mo.exists:
             raise ValueError(f"Found '{self.class_name}:{dn}'when trying to create object.")
         return mo
     
-    def get_or_create(self, dn, **kwargs):
-        mo = MO(self.class_name, dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
+    def get_or_create(self, dn = None, load = False, **kwargs):
+        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
         mo.load()
         return mo 
 
@@ -342,17 +455,17 @@ class MOInterface:
         for k, v in self.__dict__.items():
             yield (k,v)
 
-    def get(self,class_name, dn, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).get(dn, **kwargs)
+    def get(self,class_name, load = False, **kwargs):
+        return MOHandler(class_name, request_handler = self.request_handler).get(**kwargs)
 
-    def list(self,class_name,dn, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).list(dn, **kwargs)
+    def list(self,class_name, load = False, **kwargs):
+        return MOHandler(class_name, request_handler = self.request_handler).list(**kwargs)
 
-    def create(self,class_name, dn, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).create(dn, **kwargs)
+    def create(self,class_name, load = False, **kwargs):
+        return MOHandler(class_name, request_handler = self.request_handler).create(**kwargs)
     
-    def get_or_create(self,class_name, dn, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).ger_or_create(dn, **kwargs)
+    def get_or_create(self,class_name, load = False, **kwargs):
+        return MOHandler(class_name, request_handler = self.request_handler).get_or_create(**kwargs)
 
     def __getattr__(self, class_name):
         return MOHandler(class_name, request_handler = self.request_handler)
