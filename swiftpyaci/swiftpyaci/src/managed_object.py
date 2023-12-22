@@ -21,9 +21,15 @@ class ManagedObject:
         self.__cache_attributes = None
         self.__exists = None
         self.__children = list()
-        self.set_attrs(**kwargs)
+        self.set_attrs(**kwargs) # need before load so that we can construct dn and rn
         if load:
+            self.__log.debug("Loading data from APIC")
             self.load()
+            self.set_attrs(**kwargs) # need again to find any changes passed in kwargs
+        
+        ###
+        # Need to run this ag
+        
 
     @property
     def dn(self):
@@ -368,10 +374,9 @@ class ManagedObjectHandler:
         
 
     def get(self, dn = None, load = False, **kwargs):
-        mo = ManagedObject(self.class_name, dn = dn, request_handler = self.request_handler, **kwargs)
+        mo = ManagedObject(self.class_name, dn = dn, load = load, request_handler = self.request_handler, **kwargs)
         if load:
             return mo
-        mo.load()
         if not mo.exists:
             raise ValueError(f"Tried to get '{self.class_name}:{dn}' but got no result. Object does not exist")
         return mo
@@ -383,16 +388,18 @@ class ManagedObjectHandler:
             this = list(mo.values())[0].get("attributes",{})
             yield ManagedObject(self.class_name, this.pop("dn"), request_handler = self.request_handler, mo_class = self.mo_class, load = False, **this)
     
-    def create(self, dn = None, load = False, **kwargs):
-        mo = ManagedObject(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
-        mo.load()
+    def create(self, dn = None, load = False, save = False, **kwargs):
+        mo = ManagedObject(self.class_name, dn = dn, load = load, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
         if mo.exists:
             raise ValueError(f"Found '{self.class_name}:{dn}'when trying to create object.")
+        if save:
+            mo.save()
         return mo
     
-    def get_or_create(self, dn = None, load = False, **kwargs):
-        mo = ManagedObject(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
-        mo.load()
+    def get_or_create(self, dn = None, load = False, save = False, **kwargs):
+        mo = ManagedObject(self.class_name, dn = dn, load = load, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
+        if save:
+            mo.save()
         return mo 
 
     @staticmethod
