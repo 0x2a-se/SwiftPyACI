@@ -1,7 +1,7 @@
 import requests
 import logging
 
-from .mo import MO, MOInterface
+from .managed_object import ManagedObject, ManagedObjectHandler, ManagedObjectClass
 from .request_handler import RequestHandler
 
 
@@ -12,19 +12,33 @@ class APIC:
         
         self.base_url = url
         self.session = None
-        self.req = RequestHandler(url, verify_ssl=verify_ssl)
+        self.request_handler = RequestHandler(url, verify_ssl=verify_ssl)
         self.login(username, password, verify_ssl=verify_ssl)
-    
+
     def login(self, username, password, verify_ssl):
-        resp = self.req.post("aaaLogin", data = f'<aaaUser name="{username}" pwd="{password}"/>', data_format = "xml")
+        resp = self.request_handler.post("aaaLogin", data = f'<aaaUser name="{username}" pwd="{password}"/>', data_format = "xml")
         return True
 
     def logout(self):
-        resp = self.req.post("aaaLogout")
+        resp = self.request_handler.post("aaaLogout")
         return True
 
-    @property
-    def mo(self):
-        return MOInterface(request_handler = self.req)
+    def mo(self, class_name, dn, load = False, **kwargs):
+        return ManagedObject(self.class_name, dn, request_handler = self.request_handler, mo_class = ManagedObjectClass(class_name, self.request_handler), load = False, **kwargs)
+    
+    def get(self,class_name, load = False, **kwargs):
+        return ManagedObjectHandler(class_name, request_handler = self.request_handler).get(**kwargs)
+
+    def list(self,class_name, load = False, **kwargs):
+        return ManagedObjectHandler(class_name, request_handler = self.request_handler).list(**kwargs)
+
+    def create(self,class_name, load = False, **kwargs):
+        return ManagedObjectHandler(class_name, request_handler = self.request_handler).create(**kwargs)
+    
+    def get_or_create(self,class_name, load = False, **kwargs):
+        return ManagedObjectHandler(class_name, request_handler = self.request_handler).get_or_create(**kwargs)
+
+    def __getattr__(self, class_name):
+        return ManagedObjectHandler(class_name, request_handler = self.request_handler)
 
 

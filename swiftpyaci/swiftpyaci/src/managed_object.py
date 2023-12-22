@@ -7,7 +7,7 @@ from .base_class import Base
 from .base_class import Generic
 
 
-class MO:
+class ManagedObject:
     def __init__(self, class_name, dn = None,rn = None,parent_dn = None,  mo_class = None, request_handler = None, class_meta = None, load = False, **kwargs):
         
 
@@ -98,7 +98,7 @@ class MO:
     def child(self,class_name, **kwargs):
         kwargs.update({"parent_dn": self.dn})
         self.__log.debug(f"parent_dn: '{kwargs.get('parent_dn')}'")
-        child = MOHandler(class_name, request_handler = self.__req).get_or_create(**kwargs)
+        child = ManagedObjectHandler(class_name, request_handler = self.__req).get_or_create(**kwargs)
         self.__children.append(child)
 
     def get_cache(self):
@@ -238,7 +238,7 @@ class MO:
 
 
 
-class MOAttribute(Base):
+class ManagedObjectAttribute(Base):
     def __init__(self, attr_name,**kwargs):
         self.__attr_name = attr_name
         self.set_attrs(**kwargs)
@@ -261,10 +261,10 @@ class MOAttribute(Base):
         return False
 
 
-class MOAttributes(Base):
+class ManagedObjectAttributes(Base):
     def __init__(self,**kwargs):
         for k,v in kwargs.items():
-            setattr(self,k,MOAttribute(k, **v))
+            setattr(self,k,ManagedObjectAttribute(k, **v))
 
     def get_mandatory(self):
         for k,v in self:
@@ -283,7 +283,7 @@ class MOAttributes(Base):
     
 
 
-class MOClass(Base):
+class ManagedObjectClass(Base):
     def __init__(self,class_name, request_handler):
         self.__class_name = class_name
         self.__meta_full_class_name = re.sub( r"([A-Z])", r":\1", class_name, count=1)
@@ -302,7 +302,7 @@ class MOClass(Base):
         return self.__class_name
     
     def set_attributes(self):
-        self.attributes = MOAttributes(**self.__raw_json_meta.get("properties"))
+        self.attributes = ManagedObjectAttributes(**self.__raw_json_meta.get("properties"))
 
     def set_configurable_attributes(self):
         self.configurable_attributes = list(self.attributes.get_configurable())
@@ -331,11 +331,11 @@ class MOClass(Base):
 
 
 
-class MOHandler:
+class ManagedObjectHandler:
     def __init__(self,class_name, request_handler = None):
         self.class_name = class_name
         self.request_handler = request_handler
-        self.mo_class = MOClass(class_name, self.request_handler)
+        self.mo_class = ManagedObjectClass(class_name, self.request_handler)
 
     def __str__(self):
         return repr(self)
@@ -350,7 +350,7 @@ class MOHandler:
         
 
     def get(self, dn = None, load = False, **kwargs):
-        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, **kwargs)
+        mo = ManagedObject(self.class_name, dn = dn, request_handler = self.request_handler, **kwargs)
         if load:
             return mo
         mo.load()
@@ -363,17 +363,17 @@ class MOHandler:
         resp = self.request_handler.list(f"class/{self.class_name}", params=params)
         for mo in resp:
             this = list(mo.values())[0].get("attributes",{})
-            yield MO(self.class_name, this.pop("dn"), request_handler = self.request_handler, mo_class = self.mo_class, load = False, **this)
+            yield ManagedObject(self.class_name, this.pop("dn"), request_handler = self.request_handler, mo_class = self.mo_class, load = False, **this)
     
     def create(self, dn = None, load = False, **kwargs):
-        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
+        mo = ManagedObject(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
         mo.load()
         if mo.exists:
             raise ValueError(f"Found '{self.class_name}:{dn}'when trying to create object.")
         return mo
     
     def get_or_create(self, dn = None, load = False, **kwargs):
-        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
+        mo = ManagedObject(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
         mo.load()
         return mo 
 
@@ -488,35 +488,3 @@ class MOHandler:
         return new_kwargs
 
 
-class MOInterface:
-
-    def __init__(self, request_handler = None):
-        self.__log = logging.getLogger()
-        self.request_handler = request_handler
-
-    def __str__(self):
-        return repr(self)
-
-    def __repr__(self):
-        res = [f"{k}='{v}'" for k,v in self]
-        return f"{self.__class__.__name__}({','.join(res)})"
-
-    def __iter__(self):
-        for k, v in self.__dict__.items():
-            yield (k,v)
-
-    def get(self,class_name, load = False, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).get(**kwargs)
-
-    def list(self,class_name, load = False, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).list(**kwargs)
-
-    def create(self,class_name, load = False, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).create(**kwargs)
-    
-    def get_or_create(self,class_name, load = False, **kwargs):
-        return MOHandler(class_name, request_handler = self.request_handler).get_or_create(**kwargs)
-
-    def __getattr__(self, class_name):
-        return MOHandler(class_name, request_handler = self.request_handler)
-    
