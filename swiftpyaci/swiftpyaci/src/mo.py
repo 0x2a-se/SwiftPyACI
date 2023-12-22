@@ -29,9 +29,12 @@ class MO:
     def dn(self):
         if self.__dn:
             return self.__dn
+        
+        self.__log.debug(f"rn: '{self.rn}, parent_dn: '{self.__parent_dn}")
         if self.rn and self.__parent_dn:
             return f"{self.__parent_dn}/{self.rn}"
         
+        self.__log.error(f"Invalid dn '{self.__dn}'")
         raise ValueError(f"Could not construct DN for '{self.__class_name}'")
 
     @property
@@ -44,6 +47,7 @@ class MO:
             rn = rn.replace(f"{{{attr}}}", getattr(self,attr))
         if rn:
             return rn
+        self.__log.error(f"Invalid rn '{rn}'")
         raise ValueError(f"Could not construct rn for '{self.__class_name}'")
 
     def __setattr__(self, name, value):
@@ -65,6 +69,7 @@ class MO:
         return f"{self.class_name}({','.join(res)})"
 
     def __iter__(self):
+        yield ("dn",self.dn)
         for k, v in self.__dict__.items():
             if not k.startswith("_"):
                 yield (k,v)
@@ -85,16 +90,22 @@ class MO:
     @property
     def exists(self):
         return self.__exists
-
-    def child(self,class_name, dn, **kwargs):
-        child = MO(class_name,dn, **kwargs)
-        self.__children()
+    
+    @property
+    def children(self):
+        return self.__children
+    
+    def child(self,class_name, **kwargs):
+        kwargs.update({"parent_dn": self.dn})
+        self.__log.debug(f"parent_dn: '{kwargs.get('parent_dn')}'")
+        child = MOHandler(class_name, request_handler = self.__req).get_or_create(**kwargs)
+        self.__children.append(child)
 
     def get_cache(self):
         return self.__cache_attributes or {}
 
     def set_cache(self):
-        self.__cache_attributes = deepcopy(self.serilize())
+        self.__cache_attributes = deepcopy(self.serilize_attributes())
 
     def load(self):
         # Load MO data from APIC
@@ -108,15 +119,24 @@ class MO:
         self.set_cache()
         return True
 
-    def save(self):
-        if not self.diff():
-            return None
+    def save_data(self):
+        res = {"attributes": {k: v["new"] for k,v in self.diff_atributes().items() if v["action"] in ["changed", "new"]}}
+        children = list()
+        for child in self.__children:
+            if child.have_diff():
+                children.append(child.save_data())
+        
+        if children:
+            res.update({"children": children})
+        
+        if not self.have_diff and not children:
+            return {}
+        return {self.class_name: res}
 
-        data = {
-            self.class_name: {
-                "attributes": {k: v["new"] for k,v in self.diff().items() if v["action"] in ["changed", "new"]}
-            }
-        }
+    def save(self):
+        data = self.save_data()
+        if not data:
+            return None
 
         self.__log.info(data)
         self.__req.post(self.uri, data = data)
@@ -124,8 +144,15 @@ class MO:
 
 
     def diff(self):
+        res = {"attributes": self.diff_atributes()}
+        children = self.diff_children()
+        if children:
+            res.update({"children": self.diff_children()})
+        return res
+
+    def diff_atributes(self):
         dict_a = self.get_cache()
-        dict_b = self.serilize()
+        dict_b = self.serilize_attributes()
 
         common_keys =  set(dict_a) & set(dict_b)
         res = {
@@ -139,13 +166,16 @@ class MO:
 
         return res
     
+    def diff_children(self):
+        return [child.diff() for child in self.__children]
+    
     def have_diff(self):
-        if self.diff():
+        if self.diff_atributes():
             return True
         return False
 
     def print_diff(self):
-        diff = self.diff()
+        diff = self.diff_atributes()
         print ()
         if diff.get("added", {}):
             print ("New attributes:")
@@ -175,6 +205,13 @@ class MO:
         return [k for k,v in self]
 
     def serilize(self):
+        res = {"attributes": self.serilize_attributes()}
+        children = self.serilize_children()
+        if children:
+            res.update({"children": children})
+        return {self.class_name: res}
+
+    def serilize_attributes(self):
         """Serilizes attributes
         Returns:
             Dict: Dict of this objects attributes
@@ -185,8 +222,21 @@ class MO:
         
         return res
 
+    def serilize_children(self):
+        """Serilizes attributes
+        Returns:
+            Dict: Dict of this objects attributes
+        """
+        res = list()
+        for child in self.__children:
+            res.append(child.serilize())
+        
+        return res
+
     def json(self):
         return json.dumps(self.serilize())
+
+
 
 class MOAttribute(Base):
     def __init__(self, attr_name,**kwargs):
@@ -316,7 +366,7 @@ class MOHandler:
             yield MO(self.class_name, this.pop("dn"), request_handler = self.request_handler, mo_class = self.mo_class, load = False, **this)
     
     def create(self, dn = None, load = False, **kwargs):
-        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, **kwargs)
+        mo = MO(self.class_name, dn = dn, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
         mo.load()
         if mo.exists:
             raise ValueError(f"Found '{self.class_name}:{dn}'when trying to create object.")
