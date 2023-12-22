@@ -37,10 +37,6 @@ class APIC:
     
     def get_or_create(self,class_name, load = False, **kwargs):
         return ManagedObjectHandler(class_name, request_handler = self.request_handler).get_or_create(**kwargs)
-    
-    # def set(self,class_name, load = False, **kwargs):
-    #     # sets mo to passed kwargs
-    #     return ManagedObjectHandler(class_name, request_handler = self.request_handler).set(**kwargs)
 
     def __getattr__(self, class_name):
         return ManagedObjectHandler(class_name, request_handler = self.request_handler)
