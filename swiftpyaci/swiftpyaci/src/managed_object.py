@@ -50,14 +50,25 @@ class ManagedObject:
         self.__log.error(f"Invalid rn '{rn}'")
         raise ValueError(f"Could not construct rn for '{self.__class_name}'")
 
+    @property
+    def delete(self):
+        return getattr(self,"__delete", False)
+    
+
     def __setattr__(self, name, value):
         if name == "dn":
             name = "__dn"
+        
+        elif name == "delete":
+            if not type(value) == bool:
+                raise TypeError("Attribute 'delete' need to be bool.")
+            name = "__delete"
 
         elif not name.startswith("_") and name and not self.__mo_class.is_valid_attribute(name):
             raise ValueError(f"{name} is not a valid attribute")
         
         super().__setattr__(name, value)
+        
 
 
     def __str__(self):
@@ -120,6 +131,8 @@ class ManagedObject:
         return True
 
     def save_data(self):
+        if self.delete:
+            return {self.class_name: {"attributes": {"status": "deleted"}}}
         res = {"attributes": {k: v["new"] for k,v in self.diff_atributes().items() if v["action"] in ["changed", "new"]}}
         children = list()
         for child in self.__children:
@@ -142,8 +155,13 @@ class ManagedObject:
         self.__req.post(self.uri, data = data)
         self.load()
 
+    def subtree(self):
+        return self.__req.get_mo(self.uri, params = {"rsp-prop-include": "config-only", "rsp-subtree": "full"})
+
 
     def diff(self):
+        if self.delete:
+            return self.subtree()
         res = {"attributes": self.diff_atributes()}
         children = self.diff_children()
         if children:

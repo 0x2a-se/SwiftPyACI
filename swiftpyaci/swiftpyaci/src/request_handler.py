@@ -31,6 +31,7 @@ class RequestHandler:
         resp = self.session.get(url, params=params)
         self.raise_for_status(resp)
         return resp.json() if data_format == "json" else resp.text
+    
 
     def get_mo(self, uri, params = None):
         resp = self.get(uri,params = params, data_format = "json").get("imdata", [])
