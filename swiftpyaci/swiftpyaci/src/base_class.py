@@ -1,4 +1,3 @@
-import yaml
 import json
 
 class Base:
@@ -44,9 +43,6 @@ class Base:
     def json(self):
         return json.dumps(self.serilize())
     
-    def yaml(self):
-        return yaml.dump(self.serilize()) 
-
 class Generic(Base):
 
     def __init__(self,_obj_name, **kwargs):

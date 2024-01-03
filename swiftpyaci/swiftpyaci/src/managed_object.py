@@ -1,19 +1,20 @@
 import logging
 import json
-import re
 
 from copy import deepcopy
 from .base_class import Base
 from .base_class import Generic
+from .class_meta import ClassMeta, get_class_meta
+
 
 
 class ManagedObject:
-    def __init__(self, class_name, dn = None,rn = None,parent_dn = None,  mo_class = None, request_handler = None, class_meta = None, load = False, **kwargs):
+    def __init__(self, class_name, dn = None,rn = None,parent_dn = None,  class_meta = None, request_handler = None, load = False, **kwargs):
         
 
         self.__log = logging.getLogger()
         self.__class_name = class_name
-        self.__mo_class = mo_class
+        self.__class_meta = class_meta
         self.__dn = dn
         self.__rn = rn
         self.__parent_dn = parent_dn
@@ -47,14 +48,7 @@ class ManagedObject:
     def rn(self):
         if self.__rn:
             return self.__rn
-        
-        rn = self.__mo_class.rn_format
-        for attr in self.__mo_class.naming:
-            rn = rn.replace(f"{{{attr}}}", getattr(self,attr))
-        if rn:
-            return rn
-        self.__log.error(f"Invalid rn '{rn}'")
-        raise ValueError(f"Could not construct rn for '{self.__class_name}'")
+        return self.__class_meta.rn(**{id_attr: getattr(self,id_attr) for id_attr in self.__class_meta.identified_by})
 
     @property
     def delete(self):
@@ -70,8 +64,8 @@ class ManagedObject:
                 raise TypeError("Attribute 'delete' need to be bool.")
             name = "__delete"
 
-        elif not name.startswith("_") and name and not self.__mo_class.is_valid_attribute(name):
-            raise ValueError(f"{name} is not a valid attribute")
+        #elif not name.startswith("_") and name and not self.__class_meta.is_valid_attribute(name):
+        #    raise ValueError(f"{name} is not a valid attribute")
         
         super().__setattr__(name, value)
         
@@ -97,8 +91,8 @@ class ManagedObject:
         return self.__class_name
     
     @property
-    def meta(self):
-        return self.__mo_class
+    def class_meta(self):
+        return self.__class_meta
 
     @property
     def uri(self):
@@ -125,14 +119,20 @@ class ManagedObject:
         self.__cache_attributes = deepcopy(self.serilize_attributes())
 
     def load(self):
+        if not self.__req:
+            raise ConnectionError("Offline mode, cannot load Managed Object")
         # Load MO data from APIC
-        mo_data = self.__req.get_mo(self.uri, params = {"rsp-prop-include": "config-only"})
-
+        mo_data = self.__req.get_mo(self.uri, params = {"rsp-prop-include": "all"})
+        
         if not mo_data:
             self.__exists = False
             return False
         self.__exists = True
         self.set_attrs(**mo_data.get(self.class_name, {}).get("attributes"))
+
+        for child in self.__children:
+            child.load()
+
         self.set_cache()
         return True
 
@@ -153,6 +153,8 @@ class ManagedObject:
         return {self.class_name: res}
 
     def save(self):
+        if not self.__req:
+            raise ConnectionError("Offline mode, cannot save Managed Object")
         data = self.save_data()
         if not data:
             return None
@@ -162,6 +164,8 @@ class ManagedObject:
         self.load()
 
     def subtree(self):
+        if not self.__req:
+            raise ConnectionError("Offline mode, cannot get subtree for Managed Object")
         return self.__req.get_mo(self.uri, params = {"rsp-prop-include": "config-only", "rsp-subtree": "full"})
 
 
@@ -223,37 +227,62 @@ class ManagedObject:
         """Sets attributes from kwargs
         """
         for k,v in kwargs.items():
+            self.__log.debug(f"Setting attr '{k}'")
             setattr(self, k,v)
 
     def list_attributes(self):
         return [k for k,v in self]
 
-    def serilize(self):
-        res = {"attributes": self.serilize_attributes()}
-        children = self.serilize_children()
+    def serilize(self, **kwargs):
+        res = {"attributes": self.serilize_attributes(**kwargs)}
+        children = self.serilize_children(**kwargs)
         if children:
             res.update({"children": children})
         return {self.class_name: res}
+        
+    def config(self):
+        return self.serilize(include = 'dn',isConfigurable = True)
 
-    def serilize_attributes(self):
-        """Serilizes attributes
+    def serilize_attributes(self, include = None, **kwargs):
+        """Serilizes attributes to dict
+
+        Args:
+            include (list or string, optional): List of or string with 1 property to be included in result. Defaults to None.
+        kwargs:
+            Kwargs will be treated as property filterm i.e isMandatory = True will include all mandatory attributes.
+
         Returns:
-            Dict: Dict of this objects attributes
+            dict: dict with serilized attributes. If include and kwargs are not passed then all properties will be included.
         """
+
+
+        # attributes show be a dict of attributes filter, or all
+        include_all_attributes = False
+
+        include_attributes = list()
+        if kwargs:
+            include_attributes = self.__class_meta.properties.filter(**kwargs)
+
+        if type(include) == list:
+            include_attributes = include_attributes + include
+        elif include:
+            include_attributes.append(include)
+
         res = dict()
         for k,v in self:
-            res.update({k: v})
+            if k in include_attributes or len(include_attributes) == 0:
+                res.update({k: v})
         
         return res
 
-    def serilize_children(self):
+    def serilize_children(self, **kwargs):
         """Serilizes attributes
         Returns:
             Dict: Dict of this objects attributes
         """
         res = list()
         for child in self.__children:
-            res.append(child.serilize())
+            res.append(child.serilize(**kwargs))
         
         return res
 
@@ -262,104 +291,11 @@ class ManagedObject:
 
 
 
-class ManagedObjectAttribute(Base):
-    def __init__(self, attr_name,**kwargs):
-        self.__attr_name = attr_name
-        self.set_attrs(**kwargs)
-
-    def __str__(self):
-        return self.__attr_name
-
-    @property
-    def attr_name(self):
-        return self.__attr_name
-
-    def is_naming(self):
-        if getattr(self, "isNaming", False):
-            return True
-        return False
-    
-    def is_mandatory(self):
-        if getattr(self, "mandatory", False) or getattr(self, "isNaming", False):
-            return True
-        return False
-
-
-class ManagedObjectAttributes(Base):
-    def __init__(self,**kwargs):
-        for k,v in kwargs.items():
-            setattr(self,k,ManagedObjectAttribute(k, **v))
-
-    def get_mandatory(self):
-        for k,v in self:
-            if v.is_mandatory():
-                yield k
-
-    def get_naming(self):
-        for k,v in self:
-            if v.is_mandatory():
-                yield k
-
-    def get_configurable(self):
-        for k,v in self:
-            if v.isConfigurable:
-                yield k
-    
-
-
-class ManagedObjectClass(Base):
-    def __init__(self,class_name, request_handler):
-        self.__class_name = class_name
-        self.__meta_full_class_name = re.sub( r"([A-Z])", r":\1", class_name, count=1)
-        self.__meta_class_category, self.__meta_class_name = self.__meta_full_class_name.split(":")
-        self.request_handler = request_handler
-        self.set_json_meta()
-        self.set_identified_by()
-        self.set_attributes()
-        self.set_mandatory()
-        self.set_naming()
-        self.set_configurable_attributes()
-        self.rn_format = self.__raw_json_meta.get("rnFormat")
-
-    @property
-    def class_name(self):
-        return self.__class_name
-    
-    def set_attributes(self):
-        self.attributes = ManagedObjectAttributes(**self.__raw_json_meta.get("properties"))
-
-    def set_configurable_attributes(self):
-        self.configurable_attributes = list(self.attributes.get_configurable())
-    
-    def set_json_meta(self):
-        resp = self.request_handler.get(f"doc/jsonmeta/{self.__meta_class_category}/{self.__meta_class_name}", use_api_uri = False)
-        self.__raw_json_meta = resp.get(self.__meta_full_class_name,{})
-        self.set_attrs(**self.__raw_json_meta)
-
-    def set_identified_by(self):
-        self.identified_by = self.__raw_json_meta.get("identifiedBy")
-
-    def set_mandatory(self):
-        self.mandatory = list(self.attributes.get_mandatory())
-    
-    def set_naming(self):
-        self.naming = list(self.attributes.get_naming())
-
-    def __str__(self):
-        return self.__meta_full_class_name
-    
-    def is_valid_attribute(self, arg):
-        if arg in self.configurable_attributes:
-            return True
-        return False
-
-
-
 class ManagedObjectHandler:
     def __init__(self,class_name, request_handler = None):
         self.class_name = class_name
         self.request_handler = request_handler
-        self.mo_class = ManagedObjectClass(class_name, self.request_handler)
+        self.class_meta = ClassMeta(**get_class_meta(self.request_handler,class_name))
 
     def __str__(self):
         return repr(self)
@@ -373,12 +309,10 @@ class ManagedObjectHandler:
             yield (k,v)
         
 
-    def get(self, dn = None, load = False, **kwargs):
-        mo = ManagedObject(self.class_name, dn = dn, load = load, request_handler = self.request_handler, **kwargs)
-        if load:
-            return mo
+    def get(self, dn = None, **kwargs):
+        mo = ManagedObject(self.class_name, dn = dn, load = True, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
         if not mo.exists:
-            raise ValueError(f"Tried to get '{self.class_name}:{dn}' but got no result. Object does not exist")
+            raise ValueError(f"Tried to get '{mo.class_name}:{mo.dn}' but got no result. Object does not exist")
         return mo
         
     def list(self, load = True, **kwargs):
@@ -386,18 +320,18 @@ class ManagedObjectHandler:
         resp = self.request_handler.list(f"class/{self.class_name}", params=params)
         for mo in resp:
             this = list(mo.values())[0].get("attributes",{})
-            yield ManagedObject(self.class_name, this.pop("dn"), request_handler = self.request_handler, mo_class = self.mo_class, load = False, **this)
+            yield ManagedObject(self.class_name, this.pop("dn"), request_handler = self.request_handler, class_meta = self.class_meta, load = False, **this)
     
-    def create(self, dn = None, load = False, save = False, **kwargs):
-        mo = ManagedObject(self.class_name, dn = dn, load = load, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
+    def create(self, save = False, **kwargs):
+        mo = ManagedObject(self.class_name, load = True, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
         if mo.exists:
-            raise ValueError(f"Found '{self.class_name}:{dn}'when trying to create object.")
+            raise ValueError(f"Found '{mo.class_name}:{mo.dn}'when trying to create object.")
         if save:
             mo.save()
         return mo
     
-    def get_or_create(self, dn = None, load = False, save = False, **kwargs):
-        mo = ManagedObject(self.class_name, dn = dn, load = load, request_handler = self.request_handler, mo_class = self.mo_class, **kwargs)
+    def get_or_create(self, save = False, **kwargs):
+        mo = ManagedObject(self.class_name, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
         if save:
             mo.save()
         return mo 
