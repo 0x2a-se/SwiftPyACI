@@ -81,6 +81,10 @@ class ClassMeta(Base):
         self.properties = ClassMetaProperties(**properties)
         self.set_attrs(**kwargs)
     
+    @property
+    def class_name(self):
+        return f"{self.classPkg}{self.className}"
+
     def rn(self,**kwargs):
         """Builds RN from kwargs based on rnFormat, i.e tn-{name} for tenant.
 

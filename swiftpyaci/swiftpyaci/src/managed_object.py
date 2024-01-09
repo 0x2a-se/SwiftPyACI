@@ -121,9 +121,16 @@ class ManagedObject:
     def load(self):
         if not self.__req:
             raise ConnectionError("Offline mode, cannot load Managed Object")
+        
+        if not self.__class_name and not self.__dn: ## So that we can get Mo with DN and dont need to pass class_name
+            raise ValueError(f"Missing either 'class_name' and/or 'dn'")
+
         # Load MO data from APIC
         mo_data = self.__req.get_mo(self.uri, params = {"rsp-prop-include": "all"})
-        
+        if not self.__class_meta:
+            self.__class_meta = ClassMeta(**get_class_meta(self.__req,next(iter(mo_data))))
+        if not self.__class_name:
+            self.__class_name = self.__class_meta.class_name
         if not mo_data:
             self.__exists = False
             return False
@@ -307,7 +314,6 @@ class ManagedObjectHandler:
     def __iter__(self):
         for k, v in self.__dict__.items():
             yield (k,v)
-        
 
     def get(self, dn = None, **kwargs):
         mo = ManagedObject(self.class_name, dn = dn, load = True, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
