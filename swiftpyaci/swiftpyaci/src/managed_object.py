@@ -343,7 +343,8 @@ class ManagedObjectHandler:
 
         ###
         # for filter/get/all methods we want configuration with subtree
-        new_kwargs = {'rsp-subtree': 'full', 'rsp-prop-include': 'config-only'}
+        #new_kwargs = {'rsp-subtree': 'full', 'rsp-prop-include': 'config-only'}
+        new_kwargs = {'rsp-subtree': 'full', 'rsp-prop-include': 'all'}
 
         # query-target
         # target-subtree-class
