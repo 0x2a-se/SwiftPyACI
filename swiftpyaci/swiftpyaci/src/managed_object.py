@@ -9,7 +9,8 @@ from .class_meta import ClassMeta, get_class_meta
 
 
 class ManagedObject:
-    def __init__(self, class_name, dn = None,rn = None,parent_dn = None,  class_meta = None, request_handler = None, load = False, **kwargs):
+    def __init__(self, class_name = None, dn = None,rn = None,parent_dn = None,  class_meta = None, request_handler = None, load = False, **kwargs):
+        
         
 
         self.__log = logging.getLogger()
@@ -18,6 +19,7 @@ class ManagedObject:
         self.__dn = dn
         self.__rn = rn
         self.__parent_dn = parent_dn
+        
         self.__req = request_handler
         self.__cache_attributes = None
         self.__exists = None
@@ -27,9 +29,6 @@ class ManagedObject:
             self.__log.debug("Loading data from APIC")
             self.load()
             self.set_attrs(**kwargs) # need again to find any changes passed in kwargs
-        
-        ###
-        # Need to run this ag
         
 
     @property
@@ -316,21 +315,20 @@ class ManagedObjectHandler:
             yield (k,v)
 
     def get(self, dn = None, **kwargs):
-        mo = ManagedObject(self.class_name, dn = dn, load = True, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
+        mo = ManagedObject(class_name = self.class_name, dn = dn, load = True, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
         if not mo.exists:
             raise ValueError(f"Tried to get '{mo.class_name}:{mo.dn}' but got no result. Object does not exist")
         return mo
         
     def list(self, load = True, params = None, **kwargs):
         parsed_params = self.params_parser(**kwargs)
-        print (parsed_params)
         resp = self.request_handler.list(f"class/{self.class_name}", params=parsed_params)
         for mo in resp:
             this = list(mo.values())[0].get("attributes",{})
-            yield ManagedObject(self.class_name, this.pop("dn"), request_handler = self.request_handler, class_meta = self.class_meta, load = False, **this)
+            yield ManagedObject(class_name = self.class_name, dn = this.pop("dn"), request_handler = self.request_handler, class_meta = self.class_meta, load = False, **this)
     
     def create(self, save = False, **kwargs):
-        mo = ManagedObject(self.class_name, load = True, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
+        mo = ManagedObject(class_name = self.class_name, load = True, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
         if mo.exists:
             raise ValueError(f"Found '{mo.class_name}:{mo.dn}'when trying to create object.")
         if save:
@@ -338,7 +336,7 @@ class ManagedObjectHandler:
         return mo
     
     def get_or_create(self, save = False, **kwargs):
-        mo = ManagedObject(self.class_name, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
+        mo = ManagedObject(class_name = self.class_name, request_handler = self.request_handler, class_meta = self.class_meta, **kwargs)
         if save:
             mo.save()
         return mo 

@@ -35,7 +35,9 @@ class APIC:
     def dn(self, dn):
         return ManagedObject(None, dn, request_handler = self.request_handler, load = True)
 
-    def get(self,class_name = None, dn = dn,  **kwargs):
+    def get(self,class_name = None, dn = None,  **kwargs):
+        if dn and not class_name and not kwargs:
+            return ManagedObject(None, dn, request_handler = self.request_handler, load = True)
         return ManagedObjectHandler(class_name, request_handler = self.request_handler).get(**kwargs)
 
     def list(self,class_name, **kwargs):
