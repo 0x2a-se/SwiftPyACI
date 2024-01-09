@@ -29,6 +29,9 @@ class APIC:
     def mo(self, class_name, dn = None, load = False, **kwargs):
         return ManagedObject(class_name, dn, request_handler = self.request_handler, class_meta = ClassMeta(**get_class_meta(self.request_handler,class_name)), load = False, **kwargs)
     
+    def class_meta(self, class_name):
+        return ClassMeta(**get_class_meta(self.request_handler,class_name))
+
     def get(self,class_name,  **kwargs):
         return ManagedObjectHandler(class_name, request_handler = self.request_handler).get(**kwargs)
 
