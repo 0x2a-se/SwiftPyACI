@@ -31,9 +31,6 @@ class APIC:
     
     def class_meta(self, class_name):
         return ClassMeta(**get_class_meta(self.request_handler,class_name))
-    
-    def dn(self, dn):
-        return ManagedObject(None, dn, request_handler = self.request_handler, load = True)
 
     def get(self,class_name = None, dn = None,  **kwargs):
         if dn and not class_name and not kwargs:

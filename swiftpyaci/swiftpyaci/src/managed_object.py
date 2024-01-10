@@ -393,7 +393,10 @@ class ManagedObjectHandler:
             "rsp_subtree_class",
             "rsp_subtree_filter",
             "rsp_subtree_include",
-            "order_by"
+            "order_by",
+            "page",
+            "page_size",
+            "time_range"
         ]
         
         res = dict()
@@ -405,116 +408,3 @@ class ManagedObjectHandler:
                 raise KeyError(f"Arg '{k}' is invalid, valid arugments are '{params}'")
 
         return res
-
-    # @staticmethod
-    # def parse_filter_kwargs(**kwargs):
-        
-    #     operators = ["eq","ne","in"]
-
-    #     ###
-    #     # for filter/get/all methods we want configuration with subtree
-    #     new_kwargs = {'rsp-subtree': 'full', 'rsp-prop-include': 'all'}
-
-    #     # query-target
-    #     # target-subtree-class
-    #     # query-target-filter
-    #     # rsp-subtree
-    #     # rsp-subtree-class
-    #     # rsp-subtree-filter
-    #     # rsp-subtree-include
-    #     # order-by
-
-    #     ###
-    #     # if we have no kwargs then we have no filters
-    #     # just return new kwargs
-    #     if not kwargs:
-    #         return new_kwargs
-
-    #     ###
-    #     # Return filters
-    #     filters = list()
-
-    #     ###
-    #     # Loop all kwargs and parse them to a format that APIC understands
-    #     # Exampel:
-    #     #  kwargs = (fvBD_name=["bd001","bd002"], fbBD_ctx_name__ne="vrf003", fbBD_asd="vrf003", fvTenant_name__in=['tn1','tn2'])
-    #     # Returns:
-    #     #  and(and(eq("fvBD.name","bd001"),eq("fvBD.name","bd002")),ne("fbBD.ctx.name","bd002"),eq("fbBD.asd","bd002"),and(in("fvTenant.name","tn1"),in("fvTenant.name","tn2")))
-    #     for k,v in kwargs.items():
-            
-    #         ###
-    #         # logical operators that are not 'eq' should be separated on kwarg key with dunder at the end:
-    #         # fvTenant_name__ne -> fvTenant.name 'not equal'
-            
-    #         # split on first occurance from end 
-    #         this_object_arr = k.rsplit("__",1)
-
-    #         # object attribute (fvTenant_Name) should be the first element
-    #         # replace _ with . so that APIC understands it
-    #         this_object = this_object_arr[0]
-
-    #         if "_" in this_object:
-    #             this_object = this_object.replace("_",".",1)
-                
-
-    #         # if we have an logical operator that should be in the last element
-    #         # if we dont have an logical operator set it to 'eq'
-    #         this_operator = "eq"
-    #         this_filter_is_list = False
-    #         if len(this_object_arr) > 1:
-                
-    #             # if operator are a list
-    #             if this_object_arr[-1] in ["in", "not_in"]:
-    #                 this_filter_is_list = True
-
-    #                 # not_in is a list of 'ne'
-    #                 if this_object_arr[-1] == "not_in":
-    #                     this_operator = "ne"
-
-    #             else:
-    #                 # if we have a operator at the ond of attribute
-    #                 this_operator = this_object_arr[-1]
-
-
-    #         ###
-    #         # make filters
-    #         # if values are not an list then it is just a simple logic
-    #         # i.e 'eq("fvTenant.name", "Tenant001")'
-
-    #         # if value are a list then we have and/or logic depending on operator
-    #         # i.e 'and(eq("fvBD.name", "bd001"),eq("fvBD.name", "bd002")'
-    #         if not isinstance(v, list):
-    #             filters.append(f'{this_operator}({this_object},"{v}")')
-    #         else:
-                
-    #             this_filter = list()
-    #             for item in v:
-    #                 this_filter.append(f'{this_operator}({this_object},"{item}")')
-                
-    #             this_list_logic = "or"
-
-    #             if this_operator in ["in","not_in"]:
-    #                 this_list_logic = "and"
-    #                 if this_operator == "not_in":
-    #                     operator = "ne"
-                
-    #             # join filters in this list so we get 'and/or(eq("fvBD.name", "bd001"),eq("fvBD.name", "bd002")'
-    #             filters.append(f"{this_list_logic}({','.join(this_filter)})")
-        
-    #     # join all filters
-    #     # and(and(eq("fvBD.name","bd001"),eq("fvBD.name","bd002")),ne("fbBD.ctx.name","bd002"),eq("fbBD.asd","bd002"),and(in("fvTenant.name","tn1"),in("fvTenant.name","tn2")))
-    #     if len(filters) > 1:
-    #         final_filters = f'and({",".join(filters)})'
-    #     if len(filters) < 1:
-    #         return new_kwargs
-    #     else:
-    #         final_filters = filters[0]
-            
-       
-    #     ###
-    #     # update kwargs with filters
-    #     new_kwargs.update({'query-target-filter': final_filters})
-    #     print (new_kwargs)
-    #     return new_kwargs
-
-
