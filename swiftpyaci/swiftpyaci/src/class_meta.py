@@ -81,6 +81,10 @@ class ClassMeta(Base):
         self.properties = ClassMetaProperties(**properties)
         self.set_attrs(**kwargs)
     
+    
+    def __str__(self):
+        return f"ClassMeta:{self.class_name}"
+
     @property
     def class_name(self):
         return f"{self.classPkg}{self.className}"

@@ -1,5 +1,5 @@
 import json
-
+import yaml
 class Base:
     
 
@@ -42,6 +42,9 @@ class Base:
 
     def json(self):
         return json.dumps(self.serilize())
+    
+    def yaml(self):
+        return yaml.dump(self.serilize())
     
 class Generic(Base):
 

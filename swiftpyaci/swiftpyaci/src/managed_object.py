@@ -1,6 +1,7 @@
 import logging
 import json
-
+import re
+import yaml
 from copy import deepcopy
 from .base_class import Base
 from .base_class import Generic
@@ -10,44 +11,60 @@ from .class_meta import ClassMeta, get_class_meta
 
 class ManagedObject:
     def __init__(self, class_name = None, dn = None,rn = None,parent_dn = None,  class_meta = None, request_handler = None, load = False, **kwargs):
-        
-        
-
         self.__log = logging.getLogger()
         self.__class_name = class_name
         self.__class_meta = class_meta
         self.__dn = dn
         self.__rn = rn
         self.__parent_dn = parent_dn
-        
+        self.__parent = None
         self.__req = request_handler
         self.__cache_attributes = None
         self.__exists = None
         self.__children = list()
+        
         self.set_attrs(**kwargs) # need before load so that we can construct dn and rn
         if load:
             self.__log.debug("Loading data from APIC")
             self.load()
             self.set_attrs(**kwargs) # need again to find any changes passed in kwargs
-        
+        self.set_dn()
+        self.set_parent_dn()
 
     @property
     def dn(self):
-        if self.__dn:
-            return self.__dn
+        if not self.__dn:
+            self.set_dn()
+        return self.__dn
         
+
+    def get_dn(self):
         self.__log.debug(f"rn: '{self.rn}, parent_dn: '{self.__parent_dn}")
         if self.rn and self.__parent_dn:
             return f"{self.__parent_dn}/{self.rn}"
         
         self.__log.error(f"Invalid dn '{self.__dn}'")
         raise ValueError(f"Could not construct DN for '{self.__class_name}'")
+    
+    def set_dn(self):
+        if not self.__dn:
+            self.__dn = self.get_dn()
 
     @property
     def rn(self):
         if self.__rn:
             return self.__rn
         return self.__class_meta.rn(**{id_attr: getattr(self,id_attr) for id_attr in self.__class_meta.identified_by})
+
+    @property
+    def parent_dn(self):
+        return self.__parent_dn
+    
+    @property
+    def parent(self):
+        if not self.__parent:
+            self.resolve_parent()
+        return self.__parent
 
     @property
     def delete(self):
@@ -168,6 +185,30 @@ class ManagedObject:
         self.__log.info(data)
         self.__req.post(self.uri, data = data)
         self.load()
+    
+
+
+    def set_parent_dn(self):
+        
+        if not self.__parent_dn:
+            # Use a regular expression to split the DN into components
+            components = re.split(r'(?<!\\)/(?![^\[]*\])', self.dn)
+
+            # Remove the last component (the child itself) to get the parent components
+            parent_components = components[:-1]
+
+            if parent_components:
+                # Join the parent components to form the parent DN
+                self.__parent_dn = '/'.join(parent_components)
+            else:
+                self.__parent_dn = "topRoot"
+
+    def resolve_parent(self):
+        if self.__parent_dn != "topRoot":
+            self.__log.debug(f"Getting parent with DN '{self.parent_dn}'")
+            self.__parent = ManagedObject(dn = self.parent_dn, request_handler = self.__req, load = True)
+        else:
+            self.__log.debug(f"'{self.dn}' does not have any parent")
 
     def subtree(self):
         if not self.__req:
@@ -294,6 +335,9 @@ class ManagedObject:
 
     def json(self):
         return json.dumps(self.serilize())
+    
+    def yaml(self):
+        return yaml.dump(self.serilize())
 
 
 
