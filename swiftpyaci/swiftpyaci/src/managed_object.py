@@ -384,6 +384,7 @@ class ManagedObjectHandler:
         if save:
             mo.save()
         return mo 
+    
     def params_parser(self, **kwargs):
         params = [
             "query_target",
